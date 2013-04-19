@@ -6,36 +6,31 @@
 %define perl_vendorarch %(eval "`%{__perl} -V:installvendorarch`"; echo $installvendorarch)
 %define perl_archlib %(eval "`%{__perl} -V:archlib`"; echo $archlib)
 
-%{?el5:%define _with_xmms 1}
+%define _without_xmms 1
+%define _without_libvirt 0
+%define _without_libnotify 1
+%define _without_mysql 1
+
 %{?el5:%define _without_snmp 1}
 
-%{?el4:%define _with_xmms 1}
 %{?el4:%define _without_dbi 1}
 %{?el4:%define _without_libpcapdevel 1}
-%{?el4:%define _without_libnotify 1}
-%{?el4:%define _without_libvirt 1}
 
-%{?el3:%define _with_xmms 1}
 %{?el3:%define _without_dbi 1}
 %{?el3:%define _without_libpcapdevel 1}
-%{?el3:%define _without_libnotify 1}
-%{?el3:%define _without_libvirt 1}
 %{?el3:%define _without_lmsensors 1}
 
-%{?el2:%define _with_xmms 1}
 %{?el2:%define _without_libpcapdevel 1}
 
 Summary: Statistics collection daemon for filling RRD files
 Name: collectd
-Version: 5.1.0
+Version: 5.3.0
 Release: 1%{?dist}
 License: GPL
 Group: System Environment/Daemons
 URL: http://collectd.org/
 
 Source: http://collectd.org/files/collectd-%{version}.tar.bz2
-Source1: php-collection.conf
-Source2: collection3.conf
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
 BuildRequires: curl-devel
@@ -47,15 +42,20 @@ BuildRequires: libxml2-devel
 %{!?_without_lmsensors:BuildRequires: lm_sensors-devel}
 #BuildRequires: perl
 BuildRequires: python-devel
-BuildRequires: rrdtool-devel
+BuildRequires: rrdtool-devel >= 1.4
 BuildRequires: which
-%{?_with_xmms:BuildRequires: xmms-devel}
+%{!?_without_xmms:BuildRequires: xmms-devel}
 BuildRequires: zlib-devel
+BuildRequires: OpenIPMI-devel
+BuildRequires: OpenIPMI-libs
+#BuildRequires: libcredis-devel ???
+#BuildRequires: ?? libjvm ??
 Requires: curl
 %{!?_without_pcap:Requires: libpcap}
 Requires: krb5-libs
 Requires: libxml2
 Requires: zlib
+Requires: OpenIPMI
 
 
 Obsoletes: collectd-apache <= %{version}-%{release}
@@ -90,30 +90,6 @@ BuildRequires: libdbi-devel
 The DBI plugin uses libdbi, a database abstraction library, to execute SQL statements on a database and read back the result.
 %endif
 
-%package collection3
-Summary: collect perl webfrontent
-Group: System Environment/Daemons
-Requires: collectd = %{version}-%{release}
-Requires: httpd
-Requires: perl(Config::General)
-Requires: perl(Regexp::Common)
-Requires: perl(HTML::Entities)
-Requires: perl(RRDs)
-%description collection3
-collection3 is a graphing front-end for the RRD files created by and filled
-with collectd. It is written in Perl and should be run as an CGI-script.
-Graphs are generated on-the-fly, so no cron job or similar is necessary.
-
-%package php-collection
-Summary: collect php webfrontent
-Group: System Environment/Daemons
-Requires: collectd = %{version}-%{release}
-Requires: httpd
-Requires: php
-Requires: php-rrdtool
-%description php-collection
-PHP graphing frontend for RRD files created by and filled with collectd.
-
 %if %{!?_without_dbi:1}0
 %package postgresql
 Summary: postgresql plugin for collectd
@@ -131,14 +107,12 @@ Summary: libvirt plugin for collectd
 Group: System Environment/Daemons
 Requires: collectd = %{version}-%{release}
 Requires: libvirt
-Requires: OpenIPMI
 BuildRequires: libvirt-devel
-BuildRequires: OpenIPMI-devel
-BuildRequires: OpenIPMI-libs
 %description libvirt
 The libvirt plugin uses the virtualization API libvirt, created by RedHat's Emerging Technology group, to gather statistics about virtualized guests on a system.
 %endif
 
+%if %{!?_without_mysql:1}0
 %package mysql
 Summary: mysql plugin for collectd
 Group: System Environment/Daemons
@@ -148,6 +122,7 @@ BuildRequires: mysql-devel
 BuildRequires: mysql-libs
 %description mysql
 This plugin collects status variable data from mysql
+%endif
 
 %if %{!?_without_libnotify:1}0
 %package notify_desktop
@@ -197,7 +172,7 @@ BuildRequires: tcp_wrappers
 The SNMP plugin uses the Net-SNMP library to read values from network devices using the Simple Network Management Protocol (SNMP).
 %endif
 
-%if %{?_with_xmms:1}0
+%if %{!?_without_xmms:1}0
 %package xmms
 Summary: xmms plugin for collectd
 Group: System Environment/Daemons
@@ -223,10 +198,10 @@ sed -i -e 's/@LOAD_PLUGIN_RRDTOOL@LoadPlugin rrdtool/#@LOAD_PLUGIN_RRDTOOL@LoadP
     --enable-static="no" \
 %{?_without_dbi:--disable-dbi} \
 %{?_without_snmp:--disable-snmp} \
-%{!?_with_xmms:--disable-xmms} \
-    --with-libmysql="%{_libdir}/mysql/" \
-    --with-perl-bindings="INSTALLDIRS=vendor" \
-    %{!?_without_libvirt:--enable-libvirt }
+%{?_without_xmms:--disable-xmms} \
+%{!?_without_mysql:--with-libmysql="%{_libdir}/mysql/" }\
+%{!?_without_libvirt:--enable-libvirt } \
+    --with-perl-bindings="INSTALLDIRS=vendor"
 %{__make} %{?_smp_mflags}
 
 %install
@@ -237,15 +212,6 @@ sed -i -e 's/@LOAD_PLUGIN_RRDTOOL@LoadPlugin rrdtool/#@LOAD_PLUGIN_RRDTOOL@LoadP
 
 %{__install} -Dp -m0644 src/collectd.conf %{buildroot}%{_sysconfdir}/collectd.conf
 %{__install} -Dp -m0755 contrib/fedora/init.d-collectd %{buildroot}%{_initrddir}/collectd
-
-%{__mkdir} -p  %{buildroot}/%{_sysconfdir}/httpd/conf.d
-%{__mkdir} -p %{buildroot}%{_localstatedir}/www
-
-%{__cp} -a contrib/php-collection  %{buildroot}%{_localstatedir}/www
-%{__cp} -a %{SOURCE1}  %{buildroot}/%{_sysconfdir}/httpd/conf.d/
-
-%{__cp} -a contrib/collection3  %{buildroot}%{_localstatedir}/www
-%{__cp} -a %{SOURCE2}  %{buildroot}/%{_sysconfdir}/httpd/conf.d/
 
 
 %{__install} -d -m0755 %{buildroot}%{_localstatedir}/lib/collectd/
@@ -278,6 +244,7 @@ fi
 %doc %{_mandir}/man1/collectdmon.1*
 %doc %{_mandir}/man1/collectd-nagios.1*
 %doc %{_mandir}/man1/collectdctl.1.gz
+%doc %{_mandir}/man1/collectd-tg.1.gz
 %doc %{_mandir}/man5/collectd.conf.5*
 %doc %{_mandir}/man5/collectd-email.5*
 %doc %{_mandir}/man5/collectd-exec.5*
@@ -293,8 +260,10 @@ fi
 %config %{_initrddir}/collectd
 %{_bindir}/collectdctl
 %{_bindir}/collectd-nagios
+%{_bindir}/collectd-tg
 %{_datadir}/collectd/
 %dir %{_libdir}/collectd/
+%{_libdir}/collectd/aggregation.so
 %{_libdir}/collectd/apache.so
 %{_libdir}/collectd/apcups.so
 %{_libdir}/collectd/ascent.so
@@ -352,6 +321,7 @@ fi
 %{_libdir}/collectd/syslog.so
 %{_libdir}/collectd/table.so
 %{_libdir}/collectd/tail.so
+%{_libdir}/collectd/tail_csv.so
 %{_libdir}/collectd/target_notification.so
 %{_libdir}/collectd/target_replace.so
 %{_libdir}/collectd/target_scale.so
@@ -376,10 +346,6 @@ fi
 %{_sbindir}/collectdmon
 %dir %{_localstatedir}/lib/collectd/
 
-%files collection3
-%{_localstatedir}/www/collection3
-%{_sysconfdir}/httpd/conf.d/collection3.conf
-
 %if %{!?_without_dbi:1}0
 %files dbi
 %{_libdir}/collectd/dbi.so
@@ -398,8 +364,10 @@ fi
 %{_libdir}/collectd/libvirt.so
 %endif
 
+%if %{!?_without_mysql:1}0
 %files mysql
 %{_libdir}/collectd/mysql.so
+%endif
 
 %if %{!?_without_libnotify:1}0
 %files notify_desktop
@@ -413,9 +381,6 @@ fi
 %doc %{_mandir}/man5/collectd-perl.5*
 %doc %{_mandir}/man3/Collectd::Unixsock.3pm*
 
-%files php-collection
-%{_localstatedir}/www/php-collection
-%{_sysconfdir}/httpd/conf.d/php-collection.conf
 
 %if %{!?_without_dbi:1}0
 %files postgresql
@@ -431,12 +396,22 @@ fi
 %{_libdir}/collectd/snmp.so
 %endif
 
-%if %{?_with_xmms:1}0
+%if %{!?_without_xmms:1}0
 %files xmms
 %{_libdir}/collectd/xmms.so
 %endif
 
 %changelog
+
+* Fri Apr 19 2013 Wawrzyniec Niewodniczanski <wniewodniczaski@mimecast.com> - 5.3.0-1
+- Updated to release 5.3.0.
+- drop xmms and replace _with_xmms with _without_xmms,
+- drop libnotify, libvirt,
+- specify version for rrdtool-devel package,
+- add aggregation.so and csv_tail.so to file lists,
+- add collectd-tg man page,
+- removed web frontend.
+
 * Thu Aug 30 2012 Dag Wieers <dag@wieers.com> - 5.1.0-1
 - Updated to release 5.1.0.
 
